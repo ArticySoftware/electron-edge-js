@@ -30,7 +30,7 @@ void clrFuncProxyNearDeath(const Nan::WeakCallbackInfo<T> &data)
 #pragma managed(push, off)
 static Nan::Persistent<v8::Function> proxyFactory;
 static Nan::Persistent<v8::Function> proxyFunction;
-#pragma managed(push, pop)
+#pragma managed(pop)
 
 v8::Local<v8::Function> ClrFunc::Initialize(System::Func<System::Object^,System::Threading::Tasks::Task<System::Object^>^>^ func)
 {
@@ -148,175 +148,282 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
         return scope.Escape(Nan::Null());
     }
 
-    System::Type^ type = netdata->GetType();
-    if (type == System::String::typeid)
-    {
-        jsdata = stringCLR2V8((System::String^)netdata);
-    }
-    else if (type == System::Char::typeid)
-    {
-        jsdata = stringCLR2V8(((System::Char^)netdata)->ToString());
-    }
-    else if (type == bool::typeid)
-    {
-        jsdata = Nan::New<v8::Boolean>((bool)netdata);
-    }
-    else if (type == System::Guid::typeid)
-    {
-        jsdata = stringCLR2V8(netdata->ToString());
-    }
-    else if (type == System::DateTime::typeid)
-    {
-        System::DateTime ^dt = (System::DateTime^)netdata;
-        if (dt->Kind == System::DateTimeKind::Local)
-            dt = dt->ToUniversalTime();
-        else if (dt->Kind == System::DateTimeKind::Unspecified)
-            dt = gcnew System::DateTime(dt->Ticks, System::DateTimeKind::Utc);
-        long long MinDateTimeTicks = 621355968000000000; // new DateTime(1970, 1, 1, 0, 0, 0).Ticks;
-        long long value = ((dt->Ticks - MinDateTimeTicks) / 10000);
-        jsdata = Nan::New<v8::Date>((double)value).ToLocalChecked();
-    }
-    else if (type == System::DateTimeOffset::typeid)
-    {
-        jsdata = stringCLR2V8(netdata->ToString());
-    }
-    else if (type == System::Uri::typeid)
-    {
-        jsdata = stringCLR2V8(netdata->ToString());
-    }
-    else if (type == System::Int16::typeid)
-    {
-        jsdata = Nan::New<v8::Integer>((short)netdata);
-    }
-    else if (type == System::UInt16::typeid)
-    {
-        jsdata = Nan::New<v8::Integer>((unsigned short)netdata);
-    }
-    else if (type == System::Int32::typeid)
-    {
-        jsdata = Nan::New<v8::Integer>((int)netdata);
-    }
-    else if (type == System::UInt32::typeid)
-    {
-        jsdata = Nan::New<v8::Integer>((unsigned int)netdata);
-    }
-    else if (type == System::Int64::typeid)
-    {
-        jsdata = Nan::New<v8::Number>(((System::IConvertible^)netdata)->ToDouble(nullptr));
-    }
-    else if (type == double::typeid)
-    {
-        jsdata = Nan::New<v8::Number>((double)netdata);
-    }
-    else if (type == float::typeid)
-    {
-        jsdata = Nan::New<v8::Number>((float)netdata);
-    }
-    else if (type->IsPrimitive || type == System::Decimal::typeid)
-    {
-        System::IConvertible^ convertible = dynamic_cast<System::IConvertible^>(netdata);
-        if (convertible != nullptr)
-        {
-            jsdata = stringCLR2V8(convertible->ToString());
-        }
-        else
-        {
-            jsdata = stringCLR2V8(netdata->ToString());
-        }
-    }
-    else if (type->IsEnum)
-    {
-        if (enableMarshalEnumAsInt)
-        {
-            jsdata = Nan::New<v8::Integer>((int)netdata);
-        }
-        else
-        {
-            jsdata = stringCLR2V8(netdata->ToString());
-        }
-    }
-    else if (type == cli::array<byte>::typeid)
-    {
-        cli::array<byte>^ buffer = (cli::array<byte>^)netdata;
-        if (buffer->Length > 0)
-        {
-            pin_ptr<unsigned char> pinnedBuffer = &buffer[0];
-            jsdata = Nan::CopyBuffer((char *)pinnedBuffer, buffer->Length).ToLocalChecked();
-        }
-        else
-        {
-            jsdata = Nan::NewBuffer(0).ToLocalChecked();
-        }
-    }
-    else if (dynamic_cast<System::Collections::Generic::IDictionary<System::String^,System::Object^>^>(netdata) != nullptr)
-    {
-        v8::Local<v8::Object> result = Nan::New<v8::Object>();
-        for each (System::Collections::Generic::KeyValuePair<System::String^,System::Object^>^ pair
-            in (System::Collections::Generic::IDictionary<System::String^,System::Object^>^)netdata)
-        {
-            result->Set(stringCLR2V8(pair->Key), ClrFunc::MarshalCLRToV8(pair->Value));
-        }
-
-        jsdata = result;
-    }
-	else if (dynamic_cast<System::Collections::Generic::IDictionary<System::Int32, System::String^>^>(netdata) != nullptr)
+	bool converted = false;
+	while (true)
 	{
-		v8::Local<v8::Object> result = Nan::New<v8::Object>();
-		for each (System::Collections::Generic::KeyValuePair<System::Int32, System::String^>^ pair
-			in (System::Collections::Generic::IDictionary<System::Int32, System::String^>^)netdata)
+		System::Type^ type = netdata->GetType();
+		if (type->IsValueType)
 		{
-			result->Set(pair->Key, stringCLR2V8(pair->Value));
-		}
+			// start of value type conversions
 
-		jsdata = result;
-	}
-	else if (dynamic_cast<System::Collections::Generic::IDictionary<System::Int32, System::Object^>^>(netdata) != nullptr)
-	{
-		v8::Local<v8::Object> result = Nan::New<v8::Object>();
-		for each (System::Collections::Generic::KeyValuePair<System::Int32, System::Object^>^ pair
-			in (System::Collections::Generic::IDictionary<System::Int32, System::Object^>^)netdata)
+			// value types ( primitive, enums, structs )
+			if (type->IsPrimitive)
+			{
+				DBG("marshal primitive type")
+				// Boolean, Byte, SByte, Int16, UInt16, Int32, UInt32, Int64, UInt64, IntPtr, UIntPtr, Char, Double, and Single
+				// are considered "Primitive", order checks based on expected occurence
+				if ( type == System::Int32::typeid )
+				{
+					return scope.Escape(Nan::New<v8::Integer>((int)netdata));
+				}
+				else if (type == bool::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Boolean>((bool)netdata));
+				}
+				else if (type == System::UInt32::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Integer>((unsigned int)netdata));
+				}
+				else if (type == double::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((double)netdata));
+				}
+				else if (type == float::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((float)netdata));
+				}
+				else if (type == System::Char::typeid)
+				{
+					return scope.Escape(stringCLR2V8(((System::Char^)netdata)->ToString()));
+				}
+				else if (type == System::Byte::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((byte)netdata));
+				}
+				else if (type == System::Int16::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((short)netdata));
+				}
+				else if (type == System::UInt16::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((unsigned short)netdata));
+				}
+				else if (type == System::SByte::typeid)
+				{
+					return scope.Escape(Nan::New<v8::Number>((signed char)netdata));
+				}
+				else
+				{
+					DBG("marshal primitive type IntPtr, UIntPtr, long & ulong")
+					// only IntPtr, UIntPtr, long & ulong left they most likely do not fit into a number (double)
+					// without loosing some significant bits so those values get converted to a string representation
+					System::IConvertible^ convertible = dynamic_cast<System::IConvertible^>(netdata);
+					if (convertible == nullptr)
+					{
+						// should never happen
+						DBG("Error: Expecting primitive type to be Convertible. Set value to 'undefined'");
+						return scope.Escape(Nan::Undefined());
+					}
+					return scope.Escape(stringCLR2V8(convertible->ToString()));
+				}
+				DBG("Error: fall through for primitive type");
+			}
+			else
+			{
+				// value types, but not primitive -> e.g. Enum, structs, ...
+				DBG("marshal complex value type ")
+
+				if (type->IsEnum)
+				{
+					if (enableMarshalEnumAsInt)
+					{
+						return scope.Escape(Nan::New<v8::Integer>((int)netdata));
+					}
+					else
+					{
+						return scope.Escape(stringCLR2V8(netdata->ToString()));
+					}
+				}
+				else if (type == System::Guid::typeid)
+				{
+					return scope.Escape(stringCLR2V8(netdata->ToString()));
+				}
+				else if (type == System::DateTime::typeid)
+				{
+					// convert DateTime into UTC unix epoch time
+					System::DateTime ^dt = (System::DateTime^)netdata;
+					if (dt->Kind == System::DateTimeKind::Local)
+						dt = dt->ToUniversalTime();
+					else if (dt->Kind == System::DateTimeKind::Unspecified)
+						dt = gcnew System::DateTime(dt->Ticks, System::DateTimeKind::Utc);
+					long long MinDateTimeTicks = 621355968000000000; // new DateTime(1970, 1, 1, 0, 0, 0).Ticks;
+					long long value = ((dt->Ticks - MinDateTimeTicks) / 10000);
+					return scope.Escape(Nan::New<v8::Date>((double)value).ToLocalChecked());
+				}
+				else if (type == System::Decimal::typeid)
+				{
+					System::IConvertible^ convertible = dynamic_cast<System::IConvertible^>(netdata);
+					if (convertible == nullptr)
+					{
+						// should never happen for decimal
+						DBG("Error: Expecting type 'Decimal' to be Convertible. Set value to 'undefined'");
+						return scope.Escape(Nan::Undefined());
+					}
+					// TODO: invariant culture for string conversion
+					return scope.Escape(stringCLR2V8(convertible->ToString()));
+				}
+				else if (type == System::DateTimeOffset::typeid)
+				{
+					return scope.Escape(stringCLR2V8(netdata->ToString()));
+				}
+				else
+				{
+					// if not already converted try to convert object
+					if (!converted)
+					{
+						// convert object if Converter is set
+						System::Func<System::Object^, System::Object^>^ converter = EdgeObjectConverter::ConvertObject;
+						if (converter != nullptr)
+						{
+							netdata = converter(netdata);
+							converted = true;
+
+							DBG("Converter called for value type")
+							// converter have most likely have changed the type, go back to while loop
+							continue;
+						}
+					}
+
+					// if we get here we have a struct without specific handling
+					// use property/field iteration on that object
+					return scope.Escape(ClrFunc::MarshalCLRObjectToV8(netdata));
+				}
+			}
+
+			// end of value type conversions
+		}
+		else
 		{
-			result->Set(pair->Key, ClrFunc::MarshalCLRToV8(pair->Value));
+			DBG("marshal reference type ")
+
+			// start of reference type conversions
+			if (type == System::String::typeid)
+			{
+				return scope.Escape( stringCLR2V8((System::String^)netdata));
+			}
+			else if (type == System::Uri::typeid)
+			{
+				return scope.Escape( stringCLR2V8(netdata->ToString()));
+			}
+			else if (type == cli::array<byte>::typeid)
+			{
+				// byte[] -> Buffer
+				cli::array<byte>^ buffer = (cli::array<byte>^)netdata;
+				if (buffer->Length > 0)
+				{
+					pin_ptr<unsigned char> pinnedBuffer = &buffer[0];
+					jsdata = Nan::CopyBuffer((char *)pinnedBuffer, buffer->Length).ToLocalChecked();
+				}
+				else
+				{
+					jsdata = Nan::NewBuffer(0).ToLocalChecked();
+				}
+				return scope.Escape(jsdata);
+			}
+			else
+			{
+				// if not already converted try to convert them
+				if (!converted)
+				{
+					// convert object if Converter is set
+					System::Func<System::Object^, System::Object^>^ converter = EdgeObjectConverter::ConvertObject;
+					if (converter != nullptr)
+					{
+						netdata = converter(netdata);
+						converted = true;
+
+						DBG("Converter called for reference type")
+
+						// converter have most likely have changed the type, go back to while loop
+						continue;
+					}
+				}
+
+				if (dynamic_cast<System::Collections::Generic::IDictionary<System::String^, System::Object^>^>(netdata) != nullptr)
+				{
+					// IDictionary<string, object> => string keyed object, this also matches to the ExpandoObject
+					v8::Local<v8::Object> result = Nan::New<v8::Object>();
+					for each (System::Collections::Generic::KeyValuePair<System::String^, System::Object^>^ pair
+						in (System::Collections::Generic::IDictionary<System::String^, System::Object^>^)netdata)
+					{
+						result->Set(stringCLR2V8(pair->Key), ClrFunc::MarshalCLRToV8(pair->Value));
+					}
+
+					return scope.Escape(result);
+				}
+				else if (dynamic_cast<System::Collections::Generic::IDictionary<System::Int32, System::String^>^>(netdata) != nullptr)
+				{
+					// IDictionary<int, string> => integer keyed strings
+					v8::Local<v8::Object> result = Nan::New<v8::Object>();
+					for each (System::Collections::Generic::KeyValuePair<System::Int32, System::String^>^ pair
+						in (System::Collections::Generic::IDictionary<System::Int32, System::String^>^)netdata)
+					{
+						result->Set(pair->Key, stringCLR2V8(pair->Value));
+					}
+
+					return scope.Escape(result);
+				}
+				else if (dynamic_cast<System::Collections::Generic::IDictionary<System::Int32, System::Object^>^>(netdata) != nullptr)
+				{
+					// IDictionary<int, object> => integer keyed object with values expanded
+					v8::Local<v8::Object> result = Nan::New<v8::Object>();
+					for each (System::Collections::Generic::KeyValuePair<System::Int32, System::Object^>^ pair
+						in (System::Collections::Generic::IDictionary<System::Int32, System::Object^>^)netdata)
+					{
+						result->Set(pair->Key, ClrFunc::MarshalCLRToV8(pair->Value));
+					}
+
+					return scope.Escape(result);
+				}
+				else if (dynamic_cast<System::Collections::IDictionary^>(netdata) != nullptr)
+				{
+					v8::Local<v8::Object> result = Nan::New<v8::Object>();
+					for each (System::Collections::DictionaryEntry^ entry in (System::Collections::IDictionary^)netdata)
+					{
+						if (dynamic_cast<System::String^>(entry->Key) != nullptr)
+							result->Set(stringCLR2V8((System::String^)entry->Key), ClrFunc::MarshalCLRToV8(entry->Value));
+					}
+
+					return scope.Escape(result);
+				}
+				// test IEnumerable after dictionary types, because most classes that are dictionaries are also enumerable
+				else if (dynamic_cast<System::Collections::IEnumerable^>(netdata) != nullptr)
+				{
+					// IEnumerable type (also Arrays) are converted to an JS Array type
+					v8::Local<v8::Array> result = Nan::New<v8::Array>();
+					unsigned int i = 0;
+					for each (System::Object^ entry in (System::Collections::IEnumerable^)netdata)
+					{
+						DBG("Set array index %d", i);
+						result->Set(i++, ClrFunc::MarshalCLRToV8(entry));
+					}
+
+					DBG("Handle IEnumerable Subtype")
+					return scope.Escape(result);
+				}
+				else if (type == System::Func<System::Object^, System::Threading::Tasks::Task<System::Object^>^>::typeid)
+				{
+					// function pointers
+					return scope.Escape(ClrFunc::Initialize((System::Func<System::Object^, System::Threading::Tasks::Task<System::Object^>^>^)netdata));
+				}
+				else if (System::Exception::typeid->IsAssignableFrom(type))
+				{
+					// exception types
+					return scope.Escape(ClrFunc::MarshalCLRExceptionToV8((System::Exception^)netdata));
+				}
+				else
+				{
+					// generic objects
+					return scope.Escape(ClrFunc::MarshalCLRObjectToV8(netdata));
+				}
+			}
+
+			DBG("Error: fall through for reference type")
+			// end of reference type conversions
 		}
+	} // end of while loop
 
-		jsdata = result;
-	}
-    else if (dynamic_cast<System::Collections::IDictionary^>(netdata) != nullptr)
-    {
-        v8::Local<v8::Object> result = Nan::New<v8::Object>();
-        for each (System::Collections::DictionaryEntry^ entry in (System::Collections::IDictionary^)netdata)
-        {
-            if (dynamic_cast<System::String^>(entry->Key) != nullptr)
-            result->Set(stringCLR2V8((System::String^)entry->Key), ClrFunc::MarshalCLRToV8(entry->Value));
-        }
-
-        jsdata = result;
-    }
-    else if (dynamic_cast<System::Collections::IEnumerable^>(netdata) != nullptr)
-    {
-        v8::Local<v8::Array> result = Nan::New<v8::Array>();
-        unsigned int i = 0;
-        for each (System::Object^ entry in (System::Collections::IEnumerable^)netdata)
-        {
-            result->Set(i++, ClrFunc::MarshalCLRToV8(entry));
-        }
-
-        jsdata = result;
-    }
-    else if (type == System::Func<System::Object^,System::Threading::Tasks::Task<System::Object^>^>::typeid)
-    {
-        jsdata = ClrFunc::Initialize((System::Func<System::Object^,System::Threading::Tasks::Task<System::Object^>^>^)netdata);
-    }
-    else if (System::Exception::typeid->IsAssignableFrom(type))
-    {
-        jsdata = ClrFunc::MarshalCLRExceptionToV8((System::Exception^)netdata);
-    }
-    else
-    {
-        jsdata = ClrFunc::MarshalCLRObjectToV8(netdata);
-    }
-
-    return scope.Escape(jsdata);
+	DBG("Error: unexpected fall through for while loop")
 }
 
 v8::Local<v8::Value> ClrFunc::MarshalCLRExceptionToV8(System::Exception^ exception)
@@ -366,54 +473,54 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRExceptionToV8(System::Exception^ excepti
 
 v8::Local<v8::Object> ClrFunc::MarshalCLRObjectToV8(System::Object^ netdata)
 {
-    DBG("ClrFunc::MarshalCLRObjectToV8");
-    Nan::EscapableHandleScope scope;
-    v8::Local<v8::Object> result = Nan::New<v8::Object>();
-    System::Type^ type = netdata->GetType();
+	DBG("ClrFunc::MarshalCLRObjectToV8");
+	Nan::EscapableHandleScope scope;
+	v8::Local<v8::Object> result = Nan::New<v8::Object>();
 
-    if (type->FullName->StartsWith("System.Reflection")) {
-        // Avoid stack overflow due to self-referencing reflection elements
-        return scope.Escape(result);
-    }
+	System::Type^ type = netdata->GetType();
 
-    for each (FieldInfo^ field in type->GetFields(BindingFlags::Public | BindingFlags::Instance))
-    {
-        result->Set(
-            stringCLR2V8(field->Name),
-            ClrFunc::MarshalCLRToV8(field->GetValue(netdata)));
-    }
+	if (type->FullName->StartsWith("System.Reflection")) {
+		// Avoid stack overflow due to self-referencing reflection elements
+		return scope.Escape(result);
+	}
 
-    for each (PropertyInfo^ property in type->GetProperties(BindingFlags::GetProperty | BindingFlags::Public | BindingFlags::Instance))
-    {
-        if (enableScriptIgnoreAttribute)
-        {
-            if (property->IsDefined(System::Web::Script::Serialization::ScriptIgnoreAttribute::typeid, true))
-            {
-                continue;
-            }
+	for each (FieldInfo^ field in type->GetFields(BindingFlags::Public | BindingFlags::Instance))
+	{
+		result->Set(
+			stringCLR2V8(field->Name),
+			ClrFunc::MarshalCLRToV8(field->GetValue(netdata)));
+	}
 
-            System::Web::Script::Serialization::ScriptIgnoreAttribute^ attr =
-                (System::Web::Script::Serialization::ScriptIgnoreAttribute^)System::Attribute::GetCustomAttribute(
-                    property,
-                    System::Web::Script::Serialization::ScriptIgnoreAttribute::typeid,
-                    true);
+	for each (PropertyInfo^ property in type->GetProperties(BindingFlags::GetProperty | BindingFlags::Public | BindingFlags::Instance))
+	{
+		if (enableScriptIgnoreAttribute)
+		{
+			if (property->IsDefined(System::Web::Script::Serialization::ScriptIgnoreAttribute::typeid, true))
+			{
+				continue;
+			}
 
-            if (attr != nullptr && attr->ApplyToOverrides)
-            {
-                continue;
-            }
-        }
+			System::Web::Script::Serialization::ScriptIgnoreAttribute^ attr =
+				(System::Web::Script::Serialization::ScriptIgnoreAttribute^)System::Attribute::GetCustomAttribute(
+					property,
+					System::Web::Script::Serialization::ScriptIgnoreAttribute::typeid,
+					true);
 
-        MethodInfo^ getMethod = property->GetGetMethod();
-        if (getMethod != nullptr && getMethod->GetParameters()->Length <= 0)
-        {
-            result->Set(
-                stringCLR2V8(property->Name),
-                ClrFunc::MarshalCLRToV8(getMethod->Invoke(netdata, nullptr)));
-        }
-    }
+			if (attr != nullptr && attr->ApplyToOverrides)
+			{
+				continue;
+			}
+		}
 
-    return scope.Escape(result);
+		MethodInfo^ getMethod = property->GetGetMethod();
+		if (getMethod != nullptr && getMethod->GetParameters()->Length <= 0)
+		{
+			result->Set(
+				stringCLR2V8(property->Name),
+				ClrFunc::MarshalCLRToV8(getMethod->Invoke(netdata, nullptr)));
+		}
+	}
+	return scope.Escape(result);
 }
 
 System::Object^ ClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata)

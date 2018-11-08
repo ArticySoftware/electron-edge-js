@@ -62,7 +62,11 @@ extern BOOL debugMode;
 extern BOOL enableScriptIgnoreAttribute;
 extern BOOL enableMarshalEnumAsInt;
 
+#ifdef DEBUG
 #define DBG(...) if (debugMode) { printf(__VA_ARGS__); printf("\n"); }
+#else
+#define DBG(...) (void)0;
+#endif
 
 typedef void (*uv_async_edge_cb)(void* data);
 

@@ -145,4 +145,10 @@ typedef struct clrFuncWrap {
     gcroot<ClrFunc^> clrFunc;
 } ClrFuncWrap;
 
+// abstract sealed in c++/clr is a static class in C#
+public ref class EdgeObjectConverter abstract sealed {
+	public:
+		static System::Func<System::Object^, System::Object^>^ ConvertObject;
+};
+
 #endif
