@@ -164,4 +164,16 @@ public static class MonoEmbedding
 
         eo.Add(propName, val);
     }
+    
+    static public object ConvertObject( object obj )
+    {
+        var handler = EdgeObjectConverter.ConvertObject;
+        return (handler == null ? obj : handler(obj) );
+    }
+}
+
+// public class that is also present for the .NET version that contains hook to convert objects before serialization
+public static class EdgeObjectConverter
+{
+    public static Func<Object, Object> ConvertObject;
 }

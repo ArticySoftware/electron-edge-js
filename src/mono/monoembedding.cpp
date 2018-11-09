@@ -21,13 +21,21 @@ void MonoEmbedding::Initialize()
     strcpy(fullPath, dirname(fullPath));
     strcat(fullPath, "/MonoEmbedding.exe");
 
+    DBG("Init Mono from '%s'", fullPath);
+
     mono_config_parse (NULL);
-    mono_jit_init (fullPath);
-    assembly = mono_domain_assembly_open (mono_domain_get(), fullPath);
-    MonoClass* klass = mono_class_from_name(mono_assembly_get_image(assembly), "", "MonoEmbedding");
+    MonoDomain* domain = mono_jit_init (fullPath);
+    assembly = mono_domain_assembly_open (domain, fullPath);
+    DBG("assembly: %p", assembly);
+    MonoImage* image = mono_assembly_get_image(assembly);
+    DBG("image: %p", image);
+    MonoClass* klass = mono_class_from_name(image, "", "MonoEmbedding");
+    DBG("klass: %p", klass);
     MonoMethod* main = mono_class_get_method_from_name(klass, "Main", -1);
+    DBG("main method: %p", main);
     MonoException* exc;
-    MonoArray* args = mono_array_new(mono_domain_get(), mono_get_string_class(), 0);
+    
+    MonoArray* args = mono_array_new(domain, mono_get_string_class(), 0);
     mono_runtime_exec_main(main, args, (MonoObject**)&exc);
 
     mono_add_internal_call("ClrFuncInvokeContext::CompleteOnV8ThreadAsynchronousICall", (const void*)&ClrFuncInvokeContext::CompleteOnV8ThreadAsynchronous); 
