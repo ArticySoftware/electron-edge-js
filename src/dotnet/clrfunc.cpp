@@ -188,19 +188,19 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
 				}
 				else if (type == System::Byte::typeid)
 				{
-					return scope.Escape(Nan::New<v8::Number>((byte)netdata));
+					return scope.Escape(Nan::New<v8::Integer>((byte)netdata));
 				}
 				else if (type == System::Int16::typeid)
 				{
-					return scope.Escape(Nan::New<v8::Number>((short)netdata));
+					return scope.Escape(Nan::New<v8::Integer>((short)netdata));
 				}
 				else if (type == System::UInt16::typeid)
 				{
-					return scope.Escape(Nan::New<v8::Number>((unsigned short)netdata));
+					return scope.Escape(Nan::New<v8::Integer>((unsigned short)netdata));
 				}
 				else if (type == System::SByte::typeid)
 				{
-					return scope.Escape(Nan::New<v8::Number>((signed char)netdata));
+					return scope.Escape(Nan::New<v8::Integer>((signed char)netdata));
 				}
 				else
 				{
@@ -275,12 +275,15 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
 						System::Func<System::Object^, System::Object^>^ converter = EdgeObjectConverter::ConvertObject;
 						if (converter != nullptr)
 						{
+							System::Object^ original = netdata;
 							netdata = converter(netdata);
 							converted = true;
 
 							DBG("Converter called for value type")
-							// converter have most likely have changed the type, go back to while loop
-							continue;
+
+							// converter have most likely have changed the type, go back to while loop if object reference has changed
+							if ( !System::Object::ReferenceEquals(original, netdata))
+								continue;
 						}
 					}
 
@@ -329,13 +332,15 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
 					System::Func<System::Object^, System::Object^>^ converter = EdgeObjectConverter::ConvertObject;
 					if (converter != nullptr)
 					{
+						System::Object^ original = netdata;
 						netdata = converter(netdata);
 						converted = true;
 
 						DBG("Converter called for reference type")
 
-						// converter have most likely have changed the type, go back to while loop
-						continue;
+						// converter have most likely have changed the type, go back to while loop if object reference has changed
+						if (!System::Object::ReferenceEquals(original, netdata))
+							continue;
 					}
 				}
 
