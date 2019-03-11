@@ -459,11 +459,10 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRExceptionToV8(MonoException* exception)
         const char* className = mono_class_get_name(klass);
 
     	int length = strlen(namespaceName) + 1 + strlen(className) + 1;
-        char full_name[256];
-        strcpy_s(full_name, 200, namespaceName);
-        strcat_s(full_name, 200, ".");
-        strcat_s(full_name, 200, className);
-        name = stringCLR2V8(mono_string_new_wrapper(full_name));
+        char full_name[300];
+        snprintf( full_name, 300, "%s.%s", namespaceName, className);
+        //name = stringCLR2V8(mono_string_new_wrapper(full_name));
+        name = Nan::New<v8::String>(full_name).ToLocalChecked();
     }
 
     // Construct an error that is just used for the prototype - not verify efficient
