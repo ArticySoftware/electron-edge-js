@@ -252,7 +252,7 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(MonoObject* netdata, MonoException*
 			switch ( mono_type_get_type(t))
 			{
 				case MONO_TYPE_BOOLEAN:
-					break;
+					return scope.Escape(Nan::New<v8::Boolean>((bool)*(bool*)mono_object_unbox(netdata)));
 				case MONO_TYPE_CHAR:
 				{
 					MonoString * str = MonoEmbedding::ToString(netdata, exc);
@@ -455,12 +455,10 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRExceptionToV8(MonoException* exception)
         MonoProperty* prop = mono_class_get_property_from_name(klass, "Message");
         message = stringCLR2V8((MonoString*)mono_property_get_value(prop, exception, NULL, NULL));
 
-        const char* namespaceName = mono_class_get_namespace(klass);
-        const char* className = mono_class_get_name(klass);
-
-    	int length = strlen(namespaceName) + 1 + strlen(className) + 1;
         char full_name[300];
-        snprintf( full_name, 300, "%s.%s", namespaceName, className);
+        snprintf( full_name, 300, "%s.%s", 
+        	mono_class_get_namespace(klass), mono_class_get_name(klass));
+        	
         //name = stringCLR2V8(mono_string_new_wrapper(full_name));
         name = Nan::New<v8::String>(full_name).ToLocalChecked();
     }
