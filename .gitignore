@@ -68,3 +68,5 @@ tools/nuget/*.zip
 
 test-results*.*
 TemporaryGeneratedFile*.*
+
+yarn.lock
