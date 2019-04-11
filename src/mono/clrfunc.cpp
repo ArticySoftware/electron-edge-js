@@ -274,12 +274,19 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(MonoObject* netdata, MonoException*
 					return scope.Escape(jsdata = Nan::New<v8::Number>(*(float*)mono_object_unbox(netdata)));
 				case MONO_TYPE_R8:
 					return scope.Escape(jsdata = Nan::New<v8::Number>(*(double*)mono_object_unbox(netdata)));
+
+// add additional cases if we can use BigInt types
+#if USE_BIGINT
+				case MONO_TYPE_I8:
+						return scope.Escape(v8::BigInt::New( v8::Isolate::GetCurrent(), *(int64_t*)mono_object_unbox(netdata)));
+				case MONO_TYPE_U8:
+						return scope.Escape(v8::BigInt::New( v8::Isolate::GetCurrent(), *(uint64_t*)mono_object_unbox(netdata)));
+#endif
 				default:
 					// handle remaining value types
-
 					if (NULL != (primitive = MonoEmbedding::TryConvertPrimitiveOrDecimal(netdata, exc)) || *exc)
 					{
-						// decimal, long, ulong, IntPtr, UIntPtr
+						// decimal, IntPtr, UIntPtr, (long, ulong if not already handled as BigInt)
 						RETURN_STRING_OR_UNDEFINED(exc, scope, primitive)
 					}
 					if (mono_class_is_enum(klass))
@@ -682,6 +689,13 @@ MonoObject* ClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata)
         uint32_t value = jsdata->Uint32Value();
         return mono_value_box(mono_domain_get(), mono_get_uint32_class(), &value);
     }
+#ifdef USE_BIGINT
+    else if (jsdata->IsBigInt() )
+    {
+    	v8::Local<v8::BigInt> bigint = v8::Local<v8::BigInt>::Cast(jsdata);
+    	return bigint->Int64Value();
+    }
+#endif
     else if (jsdata->IsNumber())
     {
         double value = jsdata->NumberValue();

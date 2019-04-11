@@ -213,7 +213,18 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
 				else
 				{
 					DBG("marshal primitive type IntPtr, UIntPtr, long & ulong")
-					// only IntPtr, UIntPtr, long & ulong left they most likely do not fit into a number (double)
+#if USE_BIGINT
+					if (type == System::Int64::typeid )
+					{
+							return scope.Escape(v8::BigInt::New( v8::Isolate::GetCurrent(), (int64_t)netdata));
+					} 
+					else if (type == System::UInt64::typeid) 
+					{ 
+						  // ulong types get converted to an unsigned BigInt
+						  return scope.Escape(v8::BigInt::NewFromUnsigned(v8::Isolate::GetCurrent(), (uint64_t) netdata));
+					}
+#else	
+					// only decimal, IntPtr, UIntPtr, long & ulong left they most likely do not fit into a number (double)
 					// without loosing some significant bits so those values get converted to a string representation
 					System::IConvertible^ convertible = dynamic_cast<System::IConvertible^>(netdata);
 					if (convertible == nullptr)
@@ -223,6 +234,7 @@ v8::Local<v8::Value> ClrFunc::MarshalCLRToV8(System::Object^ netdata)
 						return scope.Escape(Nan::Undefined());
 					}
 					return scope.Escape(stringCLR2V8(convertible->ToString()));
+#endif					
 				}
 				DBG("Error: fall through for primitive type");
 			}
@@ -615,6 +627,13 @@ System::Object^ ClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata)
     {
         return jsdata->Uint32Value(context).FromJust();
     }
+#ifdef USE_BIGINT
+    else if (jsdata->IsBigInt() )
+    {
+    	v8::Local<v8::BigInt> bigint = v8::Local<v8::BigInt>::Cast(jsdata);
+    	return bigint->Int64Value();
+    }
+#endif
     else if (jsdata->IsNumber())
     {
         return jsdata->NumberValue(context).FromJust();

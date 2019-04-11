@@ -15,6 +15,9 @@
 # permissions and limitations under the License.
 ##
 {
+  'variables': {
+  	'compiler_defines%': ''
+  },
   'targets': [
     {
       'target_name': 'edge_coreclr',
@@ -163,11 +166,11 @@
         "<!(node -e \"require('nan')\")"
       ],
       'cflags+': [
-        '-DHAVE_NATIVECLR -std=c++11'
+        '-DHAVE_NATIVECLR -std=c++11' '<(compiler_defines)'
       ],
       'xcode_settings': {
         'OTHER_CFLAGS': [
-          '-DHAVE_NATIVECLR'
+          '-DHAVE_NATIVECLR' '<(compiler_defines)'
         ]
       },
       'conditions': [
@@ -239,7 +242,8 @@
               'AdditionalOptions': [
                 '/clr',
                 '/wd4506',
-                '/DHAVE_NATIVECLR'
+                '/DHAVE_NATIVECLR',
+                '<(compiler_defines)'
               ]
             },
             'VCLinkerTool': {
@@ -261,7 +265,8 @@
               'AdditionalOptions': [
                 '/clr',
                 '/wd4506',
-                '/DHAVE_NATIVECLR'
+                '/DHAVE_NATIVECLR',
+                '<(compiler_defines)'
               ]
             },
             'VCLinkerTool': {
