@@ -166,11 +166,13 @@
         "<!(node -e \"require('nan')\")"
       ],
       'cflags+': [
-        '-DHAVE_NATIVECLR -std=c++11' ' <(compiler_defines)'
+        '-DHAVE_NATIVECLR -std=c++11', 
+        '<(compiler_defines)'
       ],
       'xcode_settings': {
         'OTHER_CFLAGS': [
-          '-DHAVE_NATIVECLR' ' <(compiler_defines)'
+          '-DHAVE_NATIVECLR',
+          '<(compiler_defines)'
         ]
       },
       'conditions': [
