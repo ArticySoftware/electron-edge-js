@@ -689,11 +689,12 @@ MonoObject* ClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata)
         uint32_t value = jsdata->Uint32Value();
         return mono_value_box(mono_domain_get(), mono_get_uint32_class(), &value);
     }
-#ifdef USE_BIGINT
+#if USE_BIGINT
     else if (jsdata->IsBigInt() )
     {
     	v8::Local<v8::BigInt> bigint = v8::Local<v8::BigInt>::Cast(jsdata);
-    	return bigint->Int64Value();
+    	int64_t value = bigint->Int64Value();
+	return mono_value_box(mono_domain_get(), mono_get_uint64_class(), &value);
     }
 #endif
     else if (jsdata->IsNumber())
