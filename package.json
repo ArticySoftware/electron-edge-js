@@ -42,6 +42,7 @@
     "nan": "^2.10.0"
   },
   "devDependencies": {
+    "eslint": "^6.6.0",
     "mocha": "5.1.1",
     "mocha-junit-reporter": "^1.17.0"
   },
@@ -55,6 +56,8 @@
   },
   "scripts": {
     "install": "node tools/install.js",
-    "test": "node tools/test.js"
+    "test": "node tools/test.js",
+    "lint": "eslint ./lib",
+    "lint:fix": "eslint ./lib --fix"
   }
 }
