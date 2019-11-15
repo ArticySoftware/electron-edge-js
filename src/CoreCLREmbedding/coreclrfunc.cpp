@@ -53,7 +53,7 @@ v8::Local<v8::Function> CoreClrFunc::InitializeInstance(CoreClrGcHandle function
     {
     	DBG("CoreClrFunc::InitializeInstance - Creating proxy factory");
 
-		v8::Local<v8::Function> clrFuncProxyFunction = Nan::New<v8::FunctionTemplate>(coreClrFuncProxy)->GetFunction();
+		v8::Local<v8::Function> clrFuncProxyFunction = Nan::GetFunction(Nan::New<v8::FunctionTemplate>(coreClrFuncProxy)).ToLocalChecked();
 		proxyFunction.Reset(clrFuncProxyFunction);
 		v8::Local<v8::String> code = Nan::New<v8::String>(
 			"(function (f, ctx) { return function (d, cb) { return f(d, cb, ctx); }; })").ToLocalChecked();
@@ -165,16 +165,16 @@ NAN_METHOD(CoreClrFunc::Initialize)
 	DBG("CoreClrFunc::Initialize - Starting");
 
 	Nan::EscapableHandleScope scope;
-	v8::Local<v8::Object> options = info[0]->ToObject();
+	v8::Local<v8::Object> options = info[0]->ToObject(Nan::GetCurrentContext()).ToLocalChecked();
 	v8::Local<v8::Function> result;
 
-	v8::Local<v8::Value> assemblyFileArgument = options->Get(Nan::New<v8::String>("assemblyFile").ToLocalChecked());
+	v8::Local<v8::Value> assemblyFileArgument = options->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("assemblyFile").ToLocalChecked()).ToLocalChecked();
 
 	if (assemblyFileArgument->IsString())
 	{
-		v8::String::Utf8Value assemblyFile(assemblyFileArgument);
-		v8::String::Utf8Value typeName(options->Get(Nan::New<v8::String>("typeName").ToLocalChecked()));
-		v8::String::Utf8Value methodName(options->Get(Nan::New<v8::String>("methodName").ToLocalChecked()));
+		Nan::Utf8String assemblyFile(assemblyFileArgument);
+		Nan::Utf8String typeName(options->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("typeName").ToLocalChecked()).ToLocalChecked());
+		Nan::Utf8String methodName(options->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("methodName").ToLocalChecked()).ToLocalChecked());
 		v8::Local<v8::Value> exception;
 
 		DBG("CoreClrFunc::Initialize - Loading %s.%s() from %s", *typeName, *methodName, *assemblyFile);
@@ -270,7 +270,7 @@ void CoreClrFunc::FreeMarshalData(void* marshalData, int payloadType)
 
 char* CoreClrFunc::CopyV8StringBytes(v8::Local<v8::String> v8String)
 {
-	String::Utf8Value utf8String(v8String);
+	Nan::Utf8String utf8String(v8String);
 	char* sourceBytes = *utf8String;
 #ifdef EDGE_PLATFORM_WINDOWS
 	size_t sourceLength = strlen(sourceBytes);
@@ -293,7 +293,7 @@ void CoreClrFunc::MarshalV8ExceptionToCLR(v8::Local<v8::Value> exception, void**
 
     if (exception->IsObject())
     {
-        v8::Local<Value> stack = exception->ToObject()->Get(Nan::New<v8::String>("stack").ToLocalChecked());
+        v8::Local<Value> stack = exception->ToObject(Nan::GetCurrentContext()).ToLocalChecked()->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("stack").ToLocalChecked()).ToLocalChecked();
 
         if (stack->IsString())
         {
@@ -307,6 +307,9 @@ void CoreClrFunc::MarshalV8ExceptionToCLR(v8::Local<v8::Value> exception, void**
 
 void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData, int* payloadType)
 {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+    v8::Local<v8::Context> context = isolate->GetCurrentContext();
+
 	if (jsdata->IsString())
 	{
 		*marshalData = CopyV8StringBytes(v8::Local<v8::String>::Cast(jsdata));
@@ -321,7 +324,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 
 	else if (node::Buffer::HasInstance(jsdata))
 	{
-		v8::Local<v8::Object> jsBuffer = jsdata->ToObject();
+		v8::Local<v8::Object> jsBuffer = jsdata->ToObject(Nan::GetCurrentContext()).ToLocalChecked();
 		V8BufferData* bufferData = new V8BufferData();
 
 		bufferData->bufferLength = (int)node::Buffer::Length(jsBuffer);
@@ -344,7 +347,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 
 		for (int i = 0; i < arrayData->arrayLength; i++)
 		{
-			MarshalV8ToCLR(jsarray->Get(i), &arrayData->itemValues[i], &arrayData->itemTypes[i]);
+			MarshalV8ToCLR(jsarray->Get(Nan::GetCurrentContext(), i).ToLocalChecked(), &arrayData->itemValues[i], &arrayData->itemTypes[i]);
 		}
 
 		*marshalData = arrayData;
@@ -356,7 +359,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 		v8::Local<v8::Date> jsdate = v8::Local<v8::Date>::Cast(jsdata);
 		double* ticks = new double();
 
-		*ticks = jsdate->NumberValue();
+		*ticks = jsdate->NumberValue(context).FromJust();
 		*marshalData = ticks;
 		*payloadType = V8TypeDate;
 	}
@@ -364,7 +367,11 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 	else if (jsdata->IsBoolean())
 	{
 		bool* value = new bool();
-		*value = jsdata->BooleanValue();
+		#if NODE_MODULE_VERSION < 72
+		*value = jsdata->BooleanValue(context).FromJust();;
+		#else
+		*value = jsdata->BooleanValue(isolate);
+		#endif
 
 		*marshalData = value;
 		*payloadType = V8TypeBoolean;
@@ -373,7 +380,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 	else if (jsdata->IsInt32())
 	{
 		int32_t* value = new int32_t();
-		*value = jsdata->Int32Value();
+		*value = jsdata->Int32Value(context).FromJust();
 
 		*marshalData = value;
 		*payloadType = V8TypeInt32;
@@ -382,7 +389,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 	else if (jsdata->IsUint32())
 	{
 		uint32_t* value = new uint32_t();
-		*value = jsdata->Uint32Value();
+		*value = jsdata->Uint32Value(context).FromJust();
 
 		*marshalData = value;
 		*payloadType = V8TypeUInt32;
@@ -391,7 +398,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 	else if (jsdata->IsNumber())
 	{
 		double* value = new double();
-		*value = jsdata->NumberValue();
+		*value = jsdata->NumberValue(context).FromJust();
 
 		*marshalData = value;
 		*payloadType = V8TypeNumber;
@@ -407,7 +414,7 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 		V8ObjectData* objectData = new V8ObjectData();
 
 		v8::Local<v8::Object> jsobject = v8::Local<v8::Object>::Cast(jsdata);
-		v8::Local<v8::Array> propertyNames = jsobject->GetPropertyNames();
+		v8::Local<v8::Array> propertyNames = Nan::GetPropertyNames(jsobject).ToLocalChecked();
 
 		objectData->propertiesCount = propertyNames->Length();
 		objectData->propertyData = new void*[objectData->propertiesCount];
@@ -416,10 +423,10 @@ void CoreClrFunc::MarshalV8ToCLR(v8::Local<v8::Value> jsdata, void** marshalData
 
 		for (unsigned int i = 0; i < propertyNames->Length(); i++)
 		{
-			v8::Local<v8::String> name = v8::Local<v8::String>::Cast(propertyNames->Get(i));
+			v8::Local<v8::String> name = v8::Local<v8::String>::Cast(propertyNames->Get(Nan::GetCurrentContext(), i).ToLocalChecked());
 
 			objectData->propertyNames[i] = CopyV8StringBytes(name);
-			MarshalV8ToCLR(jsobject->Get(name), &objectData->propertyData[i], &objectData->propertyTypes[i]);
+			MarshalV8ToCLR(jsobject->Get(Nan::GetCurrentContext(), name).ToLocalChecked(), &objectData->propertyData[i], &objectData->propertyTypes[i]);
 		}
 
 		*marshalData = objectData;
@@ -464,7 +471,7 @@ v8::Local<v8::Value> CoreClrFunc::MarshalCLRToV8(void* marshalData, int payloadT
 
 		for (int i = 0; i < arrayData->arrayLength; i++)
 		{
-			result->Set(i, MarshalCLRToV8(arrayData->itemValues[i], arrayData->itemTypes[i]));
+			result->Set(Nan::GetCurrentContext(), i, MarshalCLRToV8(arrayData->itemValues[i], arrayData->itemTypes[i]));
 		}
 
 		return scope.Escape(result);
@@ -477,17 +484,17 @@ v8::Local<v8::Value> CoreClrFunc::MarshalCLRToV8(void* marshalData, int payloadT
 
 		for (int i = 0; i < objectData->propertiesCount; i++)
 		{
-			result->Set(Nan::New<v8::String>(objectData->propertyNames[i]).ToLocalChecked(), MarshalCLRToV8(objectData->propertyData[i], objectData->propertyTypes[i]));
+			result->Set(Nan::GetCurrentContext(), Nan::New<v8::String>(objectData->propertyNames[i]).ToLocalChecked(), MarshalCLRToV8(objectData->propertyData[i], objectData->propertyTypes[i]));
 		}
 
 		if (payloadType == V8TypeException)
 		{
-			v8::Local<v8::String> name = v8::Local<v8::String>::Cast(result->Get(Nan::New<v8::String>("Name").ToLocalChecked()));
-			v8::Local<v8::String> message = v8::Local<v8::String>::Cast(result->Get(Nan::New<v8::String>("Message").ToLocalChecked()));
+			v8::Local<v8::String> name = v8::Local<v8::String>::Cast(result->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("Name").ToLocalChecked()).ToLocalChecked());
+			v8::Local<v8::String> message = v8::Local<v8::String>::Cast(result->Get(Nan::GetCurrentContext(), Nan::New<v8::String>("Message").ToLocalChecked()).ToLocalChecked());
 
 			result->SetPrototype(Nan::GetCurrentContext(), v8::Exception::Error(message));
-			result->Set(Nan::New<v8::String>("message").ToLocalChecked(), message);
-			result->Set(Nan::New<v8::String>("name").ToLocalChecked(), name);
+			result->Set(Nan::GetCurrentContext(), Nan::New<v8::String>("message").ToLocalChecked(), message);
+			result->Set(Nan::GetCurrentContext(), Nan::New<v8::String>("name").ToLocalChecked(), name);
 		}
 
 		return scope.Escape(result);

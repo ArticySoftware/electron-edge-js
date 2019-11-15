@@ -60,6 +60,10 @@ if "%3" equ "7.9.0" (
     SET target=3.0.10
 ) else if "%3" equ "10.11.0" (
     SET target=v4.0.4
+) else if "%3" equ "12.0.0" (
+    SET target=v5.0.3
+) else if "%3" equ "12.4.0" (
+    SET target=v6.0.2
 ) else (
     echo edge-electron-js does not support Node.js %3.
     exit /b -1
@@ -67,14 +71,9 @@ if "%3" equ "7.9.0" (
 
 echo Building edge.node %FLAVOR% for node.js %2 v%3
 set NODEEXE=%DESTDIR%\node.exe
-FOR /F "tokens=* USEBACKQ" %%F IN (`npm config get prefix`) DO (SET NODEBASE=%%F)
-set GYP=%NODEBASE%\node_modules\node-gyp\bin\node-gyp.js
-if not exist "%GYP%" (
-    echo Cannot find node-gyp at %GYP%. Make sure to install with npm install node-gyp -g
-    exit /b -1
-)
 
-"%NODEEXE%" "%GYP%" configure build --target=%target% --dist-url=https://atom.io/download/electron --msvs_version=2017 -%FLAVOR%
+
+node-gyp configure build --target=%target% --dist-url=https://electronjs.org/headers --msvs_version=2017 -%FLAVOR%
 if %ERRORLEVEL% neq 0 (
     echo Error building edge.node %FLAVOR% for node.js %2 v%3
     exit /b -1
