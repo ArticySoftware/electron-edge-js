@@ -28,7 +28,11 @@ ClrFuncInvokeContext::ClrFuncInvokeContext(v8::Local<v8::Value> callbackOrSync)
     }
     else
     {
+        #if NODE_MODULE_VERSION < 72
         this->Sync = callbackOrSync->BooleanValue(context).FromJust();
+        #else
+        this->Sync = callbackOrSync->BooleanValue(isolate);
+        #endif
     }
 
     this->uv_edge_async = NULL;
@@ -120,7 +124,9 @@ v8::Local<v8::Value> ClrFuncInvokeContext::CompleteOnV8Thread()
         // complete the asynchronous call to C# by invoking a callback in JavaScript
         Nan::TryCatch try_catch;
         DBG("ClrFuncInvokeContext::CompleteOnV8Thread - calling JS callback");
-        this->callback->Call(argc, argv);
+        
+        Nan::AsyncResource resource("ClrFuncInvokeContext::CompleteOnV8Thread");
+        this->callback->Call(argc, argv, &resource);
         this->DisposeCallback();
         if (try_catch.HasCaught())
         {
